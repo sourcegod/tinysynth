@@ -4,6 +4,7 @@
     Date: Tue, 14/09/2021
     Author: Coolbrother
 """
+import mido
 
 # Midi notes numbers: from 0 to 127
 # Midi notes names: from C-1 to G9
@@ -83,6 +84,28 @@ def note2freq(name):
         return 0
 
 #-----------------------------------------
+
+def receive_from(port=0):
+    """
+    Get incoming messages - nonblocking interface
+    with cb_func as callback
+    """
+
+    portname = ""
+    inputnames = mido.get_input_names()
+    try:
+        portname = inputnames[port]
+    except IndexError:
+        print("Error: Midi Port {} is not available".format(port))
+    
+    if portname:
+        print("inportname: ",portname)
+        inport = mido.open_input(portname)
+        
+    return inport
+
+#-----------------------------------------
+
 
 # initializing lists
 # _init_noteList()

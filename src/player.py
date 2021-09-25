@@ -21,8 +21,7 @@ from modulated_volume import ModulatedVolume
 import midutils
 import math
 import itertools
-import mido
-import time
+
 _pi = math.pi
 _rate = 44100
 _channels =1
@@ -207,29 +206,8 @@ def stop():
 #-------------------------------------------
 
 
-def receive_from(port=0):
-    """
-    Get incoming messages - nonblocking interface
-    with cb_func as callback
-    """
-
-    portname = ""
-    inputnames = mido.get_input_names()
-    try:
-        portname = inputnames[port]
-    except IndexError:
-        print("Error: Midi Port {} is not available".format(port))
-    
-    if portname:
-        print("inportname: ",portname)
-        inport = mido.open_input(portname)
-        
-    return inport
-
-#-----------------------------------------
-
 def play_midi():
-    midi_input = receive_from(1)
+    midi_input = midutils.receive_from(1)
     
     
     try:
