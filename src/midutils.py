@@ -85,6 +85,18 @@ def note2freq(name):
 
 #-----------------------------------------
 
+def init():
+    """ dumy function """
+    pass
+
+#-----------------------------------------
+
+def close():
+    """ dumy function """
+    pass
+
+#-----------------------------------------
+
 def receive_from(port=0):
     """
     Get incoming messages - nonblocking interface
@@ -106,6 +118,16 @@ def receive_from(port=0):
 
 #-----------------------------------------
 
+def get_input_count():
+    return len(mido.get_input_names())
+
+#-----------------------------------------
+
+def get_output_count():
+    return len(mido.get_output_names())
+
+#-----------------------------------------
+
 
 # initializing lists
 # _init_noteList()
@@ -123,6 +145,8 @@ def test():
 
     print(f"Note to Mid A4: {note2mid('a4')}")
     print(f"Note to Freq A3: {hz('a3')}")
+    print("Midi Input count: ", get_input_count())
+    print("Midi Output count: ", get_output_count())
 
 #-----------------------------------------
 
