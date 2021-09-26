@@ -18,9 +18,12 @@ from adsr_envelope import ADSREnvelope
 from chain import Chain
 from panner import Panner
 from modulated_volume import ModulatedVolume
+from modulated_panner import ModulatedPanner
 import midutils
 import math
 import itertools
+import polysynth as pl
+
 
 _pi = math.pi
 _rate = 44100
@@ -194,6 +197,24 @@ def get_samples(notes_dic, num_samples=256):
 #-------------------------------------------
 
 
+def osc_func(freq, amp, sample_rate):
+    return iter(
+        Chain(
+            TriangleOscillator(freq=freq,
+                    amp=amp, sample_rate=sample_rate),
+            ModulatedPanner(
+                SineOscillator(freq/100,
+                    phase=90, sample_rate=sample_rate)
+            ),
+            ModulatedVolume(
+                ADSREnvelope(0.01,
+                    release_duration=0.001, sample_rate=sample_rate)
+            )
+        )
+    )
+
+#-------------------------------------------
+
 def play(samp):
     sd.play(samp)
     sd.wait()
@@ -207,8 +228,12 @@ def stop():
 
 
 def play_midi():
-    midi_input = midutils.receive_from(1)
+    synth = pl.PolySynth()
+    synth.play(osc_func=osc_func)
+
     
+    """
+    midi_input = midutils.receive_from(1)
     
     try:
         notes_dic = {}
@@ -240,7 +265,8 @@ def play_midi():
         
     except KeyboardInterrupt as err:
         print("Stoping...")
-    # '''
+
+    """
 
 #-------------------------------------------
 

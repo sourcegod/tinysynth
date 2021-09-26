@@ -60,9 +60,9 @@ class PolySynth(object):
 
     #-------------------------------------------
 
-    def play(self, osc_function=get_sine_osc, close=False):
+    def play(self, osc_func=get_sine_osc, close=False):
         # Check for release trigger, number of channels and init Stream
-        tempcf = osc_function(1, 1, self.sample_rate)
+        tempcf = osc_func(1, 1, self.sample_rate)
         has_trigger = hasattr(tempcf, "trigger_release")
         tempsm = self._get_samples({-1: [tempcf, False]})
         nchannels = tempsm.shape[1]
@@ -87,7 +87,8 @@ class PolySynth(object):
                         m_note = msg.note
                         m_vel = msg.velocity
                         # Note Off
-                        if m_type == "note_on" and m_vel == 0 and m_note in notes_dic:
+                        if (m_type == "note_on" and m_vel == 0 and m_note in notes_dic) \
+                                or (m_type == "note_off" and  m_note in notes_dic):
                             if has_trigger:
                                 notes_dic[m_note][0].trigger_release()
                                 notes_dic[m_note][1] = True
@@ -99,7 +100,7 @@ class PolySynth(object):
                         elif m_type == "note_on" and m_vel >0 and m_note not in notes_dic:
                             freq = mid.mid2freq(m_note)
                             notes_dic[m_note] = [
-                                osc_function(freq=freq, amp=m_vel/127, 
+                                osc_func(freq=freq, amp=m_vel/127, 
                                 sample_rate=self.sample_rate), 
                                 False,
                             ]
