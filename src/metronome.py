@@ -19,10 +19,10 @@ def gen_sine_osc(freq=55,  amp=1, rate=48000):
 #-------------------------------------------
 
 class Metronome(object):
-    def __init__(self, rate=48000, blocksize=960, bpm=120):
+    def __init__(self, rate=48000, block_size=960, bpm=120):
         # Constants
         self._rate = rate
-        self._blocksize = blocksize
+        self._block_size = block_size
         self.max_amp = 0.8
         self._nb_ticks = 60_000 # in milisec
         self._tempo =0
@@ -30,9 +30,10 @@ class Metronome(object):
         self._osc_index =0
         self._loop_index =0
         self._nb_loops =0 
+        self._beat_len = self._block_size * 2 # len of beat tone
         osc1 = gen_sine_osc(freq=880, amp=1, rate=self._rate)
         osc2 = gen_sine_osc(freq=440, amp=1, rate=self._rate)
-        self._blank = self._get_zeros(self._blocksize)
+        self._blank = self._get_zeros(self._block_size)
         self._osc_lst = [osc1, None, osc2, None, osc2, None, osc2, None]
         self.set_bpm(bpm)
 
@@ -42,7 +43,7 @@ class Metronome(object):
         if bpm <1and bpm > 8000: return
         self._tempo = float(self._nb_ticks  / bpm)
         nb_samples = int((self._tempo * self._rate / 1000) / 2) # for 8 sounds
-        self._nb_loops = int(nb_samples / self._blocksize)
+        self._nb_loops = int(nb_samples / self._block_size)
         self._loop_index =0
         self._osc_index =0
         self._bpm = bpm
@@ -74,7 +75,12 @@ class Metronome(object):
 
     def __next__(self):
         try:
-                osc = self._osc_lst[self._osc_index]
+                if (self._osc_index % 2 == 0) and \
+                        self._loop_index * self._block_size >= self._beat_len:
+                    osc = None
+                else:
+                    osc = self._osc_lst[self._osc_index]
+                
                 if self._loop_index +1 < self._nb_loops:
                     self._loop_index +=1
                 else:
@@ -87,7 +93,7 @@ class Metronome(object):
                 if osc is None: 
                     samp = self._blank
                 else:
-                    samp = self._get_frames(osc, self._blocksize)
+                    samp = self._get_frames(osc, self._block_size)
                 return samp
         
         except IndexError:
