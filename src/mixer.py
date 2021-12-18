@@ -19,7 +19,7 @@ def gen_sine_osc(freq=55,  amp=1, rate=48000):
 #-------------------------------------------
 
 
-class BaseObj(object):
+class BaseSynth(object):
     def __init__(self):
         self._rate =0
         self._block_size =0
@@ -39,7 +39,7 @@ class BaseObj(object):
     def _get_frames(self, osc_func, frame_count):
         # Return samples in int16 format
         samp = [next(osc_func) for _ in range(frame_count)]
-        samp = np.array(samp) 
+        # samp = np.array(samp) 
         # samp = np.int16(samp.clip(-self.max_amp, self.max_amp) * 32767)
         return samp # samples.reshape(frame_count, -1)
 
@@ -47,7 +47,7 @@ class BaseObj(object):
 
 #========================================
 
-class Metronome(BaseObj):
+class Metronome(BaseSynth):
     def __init__(self, rate=48000, block_size=960, bpm=120):
         # Constants
         self._rate = rate
@@ -125,7 +125,7 @@ class Metronome(BaseObj):
 
 #========================================
 
-class SineOsc(BaseObj):
+class SineOsc(BaseSynth):
     def __init__(self, freq=440, rate=48000, block_size=960):
         # Constants
         self._rate = rate
@@ -142,15 +142,8 @@ class SineOsc(BaseObj):
     #-------------------------------------------
 
     def __next__(self):
-        try:
-                
-            samp = self._get_frames(self._osc, self._block_size)
-            return samp
-        
-        except IndexError:
-            print("Index Error")
-            pass
-
+        samp = self._get_frames(self._osc, self._block_size)
+        return samp
 
     #-------------------------------------------
 
@@ -161,16 +154,17 @@ class SineOsc(BaseObj):
 
 #========================================
 
-class Mixer(BaseObj):
+class Mixer(BaseSynth):
     def __init__(self):
-        BaseObj.__init__(self)
-        self._samp_lst = []
+        super().__init__()
+        self._track_lst = []
 
     #-------------------------------------------
 
     def get_mixData(self):
-        samp_lst = [samp.get_next() for samp in self._samp_lst]
-        samp = (np.sum(samp_lst, axis=0) / len(samp_lst))
+        # next(track) returns an array of samples, equivalent to track.get_next method
+        samp_lst = [next(track) for track in self._track_lst]
+        samp = np.sum(samp_lst, axis=0) / len(samp_lst)
         # must multiply by 32767 before convert to int16
         samp = np.int16(samp * self._max_int16) # 32767
         # samp = np.int16(samp.clip(-self.max_amp, self.max_amp) * 32767)
@@ -178,8 +172,8 @@ class Mixer(BaseObj):
 
     #-------------------------------------------
     
-    def set_mixData(self, samp_lst):
-        self._samp_lst = samp_lst
+    def set_mixData(self, track_lst):
+        self._track_lst = track_lst
 
     #-------------------------------------------
 
@@ -224,7 +218,13 @@ class SimpleSynth(object):
 
     #-------------------------------------------
 
+    def write_data(self, samp):
+        self.stream.write(samp)
+
+    #-------------------------------------------
+
     def play(self, bpm):
+        self._total_frames =0
         self._init_stream()
         met = Metronome(self._rate, self._blocksize, bpm)
         freq = 220
@@ -240,12 +240,19 @@ class SimpleSynth(object):
         try:
             while True:
                 samp = self._mix.get_mixData()
-                self.stream.write(samp)
+                self.write_data(samp)
+                self._total_frames += samp.size
+                # print("total frames: ",  self._total_frames)
+                # self.stream.write(samp)
         except KeyboardInterrupt as err:
-            self.stream.close()
-           
+            self.stop()
     #-------------------------------------------
+    
+    def stop(self):
+        self.stream.close()
 
+    #-------------------------------------------
+           
 #========================================
 
 def main():
