@@ -26,6 +26,7 @@ class BaseSynth(object):
         self._channels =1
         self.max_amp = 0.8
         self._max_int16 = 32767
+        self._active =1
 
     #-------------------------------------------
 
@@ -44,11 +45,22 @@ class BaseSynth(object):
         return samp # samples.reshape(frame_count, -1)
 
     #-------------------------------------------
+    
+    def is_active(self):
+        return self._active
+
+    #-------------------------------------------
+
+    def set_active(self, active):
+        self._active = active
+
+    #-------------------------------------------
 
 #========================================
 
 class Metronome(BaseSynth):
     def __init__(self, rate=48000, block_size=960, bpm=120):
+        super().__init__()
         # Constants
         self._rate = rate
         self._block_size = block_size
@@ -125,14 +137,17 @@ class Metronome(BaseSynth):
 
 #========================================
 
-class SineOsc(BaseSynth):
+class SimpleOsc(BaseSynth):
     def __init__(self, freq=440, rate=48000, block_size=960):
+        super().__init__()
         # Constants
         self._rate = rate
         self._block_size = block_size
         self._freq = freq
         self.max_amp = 0.8
         self._osc = gen_sine_osc(freq=self._freq, amp=1, rate=self._rate)
+        self.curframes =0
+        self.maxframes =0
 
     #-------------------------------------------
   
@@ -163,7 +178,7 @@ class Mixer(BaseSynth):
 
     def get_mixData(self):
         # next(track) returns an array of samples, equivalent to track.get_next method
-        samp_lst = [next(track) for track in self._track_lst]
+        samp_lst = [next(track) for track in self._track_lst if track.is_active()]
         samp = np.sum(samp_lst, axis=0) / len(samp_lst)
         # must multiply by 32767 before convert to int16
         samp = np.int16(samp * self._max_int16) # 32767
@@ -228,11 +243,11 @@ class SimpleSynth(object):
         self._init_stream()
         met = Metronome(self._rate, self._blocksize, bpm)
         freq = 220
-        osc1  = SineOsc(freq, self._rate, self._blocksize)
+        osc1  = SimpleOsc(freq, self._rate, self._blocksize)
         freq = 365
-        osc2  = SineOsc(freq, self._rate, self._blocksize)
+        osc2  = SimpleOsc(freq, self._rate, self._blocksize)
         freq = 880
-        osc3  = SineOsc(freq, self._rate, self._blocksize)
+        osc3  = SimpleOsc(freq, self._rate, self._blocksize)
         self._mix.set_mixData(
                 [met, osc1, osc2, osc3]
                 )
