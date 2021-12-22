@@ -322,6 +322,11 @@ class Mixer(BaseSynth):
         self._track_lst = track_lst
 
     #-------------------------------------------
+    
+    def get_mixTracks(self):
+        return self._track_lst
+
+    #-------------------------------------------
 
 #========================================
 
@@ -423,8 +428,14 @@ class SimpleSynth(object):
         start = 96 * self._blocksize
         _len = 192 * self._blocksize
         osc4.init_params(start=start, _len=_len, pos=0, looping=1)
+        freq = 723 # G5
+        osc5  = PartOsc(freq, self._rate, self._blocksize)
+        start =0
+        _len =  3 * self._blocksize
+        osc5.init_params(start=start, _len=_len, pos=0, looping=0)
         self._mix.set_mixData(
-                [met, osc1, osc2, osc3, osc4]
+                [met, osc1, osc2, osc3, 
+                    osc4, osc5]
                 )
         self._running = False
 
@@ -450,6 +461,10 @@ class SimpleSynth(object):
 
     #-------------------------------------------
 
+    def restart(self):
+        [track.reset() for track in self._mix.get_mixTracks()]
+
+    #-------------------------------------------
            
 #========================================
 
@@ -459,12 +474,23 @@ def main():
     # synth.play(bpm)
     synth.init_synth(bpm)
 
+    valStr = ""
+    savStr = ""
+
     while 1:
-        key = input("-> ")
+        key = ""
+        valStr = input("-> ")
+        if valStr == '': valStr = savStr
+        else: savStr = valStr
+        key = valStr
+        if valStr == " ":
+            key = valStr
         if key == "p":
             if not synth._running:
                 thr = threading.Thread(target=synth.play_thread, args=())
                 thr.start()
+        elif key == "P":
+            synth.restart()
         elif key == "s":
             if synth._running:
                 thr.do_run = False
