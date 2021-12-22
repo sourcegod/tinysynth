@@ -11,12 +11,47 @@ import math
 import itertools
 import numpy as np
 import midutils as mid
+import threading
 
 def gen_sine_osc(freq=55,  amp=1, rate=48000):
     incr = (2 * math.pi * freq) / rate
     return (math.sin(v) * amp for v in itertools.count(start=0, step=incr))
 
 #-------------------------------------------
+
+class MyThread(threading.Thread):
+    def __init__(self, sleep_time=0.1):
+        """ call base class constructor """
+        super().__init__()
+        self._stop_event = threading.Event()
+        self._sleep_time = sleep_time
+
+    #-------------------------------------------
+
+    def run(self):
+        """main control loop"""
+        while not self._stop_event.isSet():
+            #do work
+            print("hi")
+            self._stop_event.wait(self._sleep_time)
+
+    #-------------------------------------------
+
+    def join(self, timeout=None):
+        """set stop event and join within a given time period"""
+        self._stop_event.set()
+        super().join(timeout)
+
+    #-------------------------------------------
+           
+#========================================
+
+"""
+    t = MyThread()
+    t.start()
+    time.sleep(5)
+    t.join(1) #wait 1s max
+"""
 
 
 class BaseSynth(object):
@@ -27,6 +62,11 @@ class BaseSynth(object):
         self.max_amp = 0.8
         self._max_int16 = 32767
         self._active =1
+        self._start =0
+        self._len =0
+        self._curpos =0
+        self._looping =0
+
 
     #-------------------------------------------
 
@@ -56,6 +96,13 @@ class BaseSynth(object):
 
     #-------------------------------------------
 
+    def reset(self):
+        self._curpos =0
+        self._active =1
+
+    #-------------------------------------------
+
+
 #========================================
 
 class Metronome(BaseSynth):
@@ -75,6 +122,8 @@ class Metronome(BaseSynth):
         osc1 = gen_sine_osc(freq=880, amp=1, rate=self._rate)
         osc2 = gen_sine_osc(freq=440, amp=1, rate=self._rate)
         self._blank = self._get_zeros(self._block_size)
+        self._rest_frames =0
+        self._resting =0
         self._osc_lst = [osc1, None, osc2, None, osc2, None, osc2, None]
         self.set_bpm(bpm)
 
@@ -82,9 +131,13 @@ class Metronome(BaseSynth):
   
     def set_bpm(self, bpm):
         if bpm <1and bpm > 8000: return
+        bpm =98
         self._tempo = float(self._nb_ticks  / bpm)
         nb_samples = int((self._tempo * self._rate / 1000) / 2) # for 8 sounds
-        self._nb_loops = int(nb_samples / self._block_size)
+        (self._nb_loops, rest_frames) = divmod(nb_samples, self._block_size)
+        print(f"nb_loops: {self._nb_loops}, rest_frames: {rest_frames}")
+        self._rest_frames = self._get_zeros(rest_frames)
+        # self._nb_loops = 12
         self._loop_index =0
         self._osc_index =0
         self._bpm = bpm
@@ -94,35 +147,46 @@ class Metronome(BaseSynth):
 
    
     def __iter__(self):
-        self._loop_index =0
-        self._osc_index =0
         return self
 
     #-------------------------------------------
 
     def __next__(self):
+        """
+        # TODO: recoding this part, for better tick precision
+        if self._resting:
+            self._resting =0
+            print("len rest_frames: ", self._rest_frames.size)
+            return self._rest_frames
+        """
+
         try:
-                if (self._osc_index % 2 == 0) and \
-                        self._loop_index * self._block_size >= self._beat_len:
-                    osc = None
+            if (self._osc_index % 2 == 0) and \
+                    self._loop_index * self._block_size >= self._beat_len:
+                osc = None
+                # osc = self._osc_lst[self._osc_index]
+            else:
+                osc = self._osc_lst[self._osc_index]
+                # osc = None
+            
+            if self._loop_index +1 < self._nb_loops:
+                self._loop_index +=1
+            else:
+                self._loop_index =0
+                if self._rest_frames.size >0:
+                    self._resting =1
+                if self._osc_index +1 < len(self._osc_lst):
+                    self._osc_index +=1
                 else:
-                    osc = self._osc_lst[self._osc_index]
-                
-                if self._loop_index +1 < self._nb_loops:
-                    self._loop_index +=1
-                else:
-                    self._loop_index =0
-                    if self._osc_index +1 < len(self._osc_lst):
-                        self._osc_index +=1
-                    else:
-                        self._osc_index =0
-                
-                if osc is None: 
-                    samp = self._blank
-                else:
-                    samp = self._get_frames(osc, self._block_size)
-                return samp
-        
+                    self._osc_index =0
+            
+            if osc is None: 
+                samp = self._blank
+            else:
+                samp = self._get_frames(osc, self._block_size)
+
+            return samp
+    
         except IndexError:
             print("Index Error")
             pass
@@ -169,6 +233,73 @@ class SimpleOsc(BaseSynth):
 
 #========================================
 
+class PartOsc(BaseSynth):
+    def __init__(self, freq=440, rate=48000, block_size=960):
+        super().__init__()
+        # Constants
+        self._rate = rate
+        self._block_size = block_size
+        self._freq = freq
+        self.max_amp = 0.8
+        self._osc = gen_sine_osc(freq=self._freq, amp=1, rate=self._rate)
+        self._start =0
+        self._len =0
+        self._curpos =0
+        self._looping =0
+
+    #-------------------------------------------
+  
+    def _get_frames(self, osc_func, frame_count):
+        """
+        Returns samples array
+        from PartOsc object
+        """
+        lst = []
+        for _ in range(frame_count):
+            if self._curpos >= self._len:
+                if self._looping:
+                    self._curpos =0
+                else: # not looping
+                    self._active =0
+                    break
+            if self._curpos < self._start: val=0
+            else: 
+                # if self._curpos == self._start: print("curpos: ", self._curpos)
+                val = next(osc_func)
+            
+            lst.append(val)
+            self._curpos +=1
+        
+        if not lst: samp = np.zeros((frame_count))
+        else: samp = np.array(lst) 
+        return samp
+
+    #-------------------------------------------
+
+    def init_params(self, start=0, _len=0, pos=0, looping=0):
+        self._start = start
+        self._len = _len
+        self._curpos = pos
+        self._looping = looping
+        self._active =1
+        self._active =1
+
+    #-------------------------------------------
+     
+    def __iter__(self):
+        return self
+
+    #-------------------------------------------
+
+    def __next__(self):
+        samp = self._get_frames(self._osc, self._block_size)
+        return samp
+
+    #-------------------------------------------
+
+#========================================
+
+
 class Mixer(BaseSynth):
     def __init__(self):
         super().__init__()
@@ -203,6 +334,7 @@ class SimpleSynth(object):
         self.amp_scale = 0.3
         self.max_amp = 0.8
         self._mix = Mixer()
+        self._running = True
 
     #-------------------------------------------
     
@@ -248,12 +380,19 @@ class SimpleSynth(object):
         osc2  = SimpleOsc(freq, self._rate, self._blocksize)
         freq = 880
         osc3  = SimpleOsc(freq, self._rate, self._blocksize)
+        freq = 1760
+        osc4  = PartOsc(freq, self._rate, self._blocksize)
+        start = 96 * self._blocksize
+        _len = 192 * self._blocksize
+        osc4.init_params(start=start, _len=_len, pos=0, looping=1)
         self._mix.set_mixData(
-                [met, osc1, osc2, osc3]
+                [met, osc1, osc2, osc3, osc4]
                 )
 
+        t = threading.currentThread()
         try:
-            while True:
+            # while self._running:
+            while getattr(t, "do_run", True):
                 samp = self._mix.get_mixData()
                 self.write_data(samp)
                 self._total_frames += samp.size
@@ -263,17 +402,78 @@ class SimpleSynth(object):
             self.stop()
     #-------------------------------------------
     
+
     def stop(self):
+        self._running = False
         self.stream.close()
 
     #-------------------------------------------
+
+    def init_synth(self, bpm):
+        self._init_stream()
+        met = Metronome(self._rate, self._blocksize, bpm)
+        freq = 220
+        osc1  = SimpleOsc(freq, self._rate, self._blocksize)
+        freq = 365
+        osc2  = SimpleOsc(freq, self._rate, self._blocksize)
+        freq = 880
+        osc3  = SimpleOsc(freq, self._rate, self._blocksize)
+        freq = 1760
+        osc4  = PartOsc(freq, self._rate, self._blocksize)
+        start = 96 * self._blocksize
+        _len = 192 * self._blocksize
+        osc4.init_params(start=start, _len=_len, pos=0, looping=1)
+        self._mix.set_mixData(
+                [met, osc1, osc2, osc3, osc4]
+                )
+        self._running = False
+
+    #-------------------------------------------
+ 
+    def play_thread(self):
+        self._total_frames =0
+        t = threading.currentThread()
+        self._running = True
+        try:
+            while getattr(t, "do_run", True):
+                samp = self._mix.get_mixData()
+                self.write_data(samp)
+                self._total_frames += samp.size
+                # print("total frames: ",  self._total_frames)
+        except KeyboardInterrupt as err:
+            self.stop()
+
+    #-------------------------------------------
+
+    def stop_thread(self):
+        self._running = False
+
+    #-------------------------------------------
+
            
 #========================================
 
 def main():
     synth = SimpleSynth()
     bpm = 120
-    synth.play(bpm)
+    # synth.play(bpm)
+    synth.init_synth(bpm)
+
+    while 1:
+        key = input("-> ")
+        if key == "p":
+            if not synth._running:
+                thr = threading.Thread(target=synth.play_thread, args=())
+                thr.start()
+        elif key == "s":
+            if synth._running:
+                thr.do_run = False
+                synth.stop_thread()
+
+        elif key == "q":
+            thr.do_run = False
+            # synth.stop()
+            break
 
 #-------------------------------------------
 
