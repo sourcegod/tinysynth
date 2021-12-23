@@ -13,6 +13,16 @@ import numpy as np
 import midutils as mid
 import threading
 
+#-----------------------------------------
+
+
+def limit_value(val, min_val=0, max_val=127):
+    if val < min_val: return min_val
+    if val > max_val: return max_val
+    return val
+
+#-----------------------------------------
+
 def gen_sine_osc(freq=55,  amp=1, rate=48000):
     incr = (2 * math.pi * freq) / rate
     return (math.sin(v) * amp for v in itertools.count(start=0, step=incr))
@@ -131,7 +141,7 @@ class Metronome(BaseSynth):
   
     def set_bpm(self, bpm):
         if bpm <1and bpm > 8000: return
-        bpm =98
+        # bpm =98
         self._tempo = float(self._nb_ticks  / bpm)
         nb_samples = int((self._tempo * self._rate / 1000) / 2) # for 8 sounds
         (self._nb_loops, rest_frames) = divmod(nb_samples, self._block_size)
@@ -299,16 +309,160 @@ class PartOsc(BaseSynth):
 
 #========================================
 
+class TimeLine(object):
+    """ TimeLine manager """
+    def __init__(self):
+        self._start =0
+        self._dur =0
+        self._stop =0
+        self._curpos =0
+        self._len =0
+
+    #-----------------------------------------
+    
+    def get_start(self):
+        """
+        return TimeLine start
+        from TimeLine object
+        """
+
+        return self._start
+    
+    #-----------------------------------------
+
+    def set_start(self, start=0):
+        """
+        set TimeLine start
+        from TimeLine object
+        """
+
+        self._start = start
+    
+    #-----------------------------------------
+
+    def get_dur(self):
+        """
+        return TimeLine duration
+        from TimeLine object
+        """
+
+        return self._dur
+    
+    #-----------------------------------------
+
+    def set_dur(self, dur):
+        """
+        set TimeLine duration
+        from TimeLine object
+        """
+
+        self._dur = dur
+    
+    #-----------------------------------------
+
+    def get_pos(self):
+        """
+        return TimeLine position
+        from TimeLine object
+        """
+
+        return self._curpos
+    
+    #-----------------------------------------
+
+    def set_pos(self, pos):
+        """
+        set TimeLine position
+        from TimeLine object
+        """
+
+        # limit pos range
+        # pos = limit_value(pos, 0, self._dur)
+        if pos <0: pos =0
+        elif pos > self._len: pos = self._len
+        self._curpos = pos
+
+    #-----------------------------------------
+
+    def get_len(self):
+        """
+        return TimeLine length
+        from TimeLine object
+        """
+
+        return self._len
+    
+    #-----------------------------------------
+
+    def set_len(self, _len):
+        """
+        set TimeLine length
+        from TimeLine object
+        """
+
+        self._len = _len
+
+    #-----------------------------------------
+
+    def reset(self):
+        """
+        reset timeline position
+        from TimeLine object
+        """
+
+        self._curpos =0
+
+    #-----------------------------------------
+
+
+    start = property(get_start, set_start)
+    dur = property(get_dur, set_dur)
+    pos = property(get_pos, set_pos)
+    len = property(get_len, set_len)
+
+    #-----------------------------------------
+
+#========================================
+
+
 
 class Mixer(BaseSynth):
-    def __init__(self):
+    def __init__(self, rate=48000, channels=1, block_size=960):
         super().__init__()
+        self._rate = rate
+        self._channels = channels
+        self._block_size = block_size
         self._track_lst = []
+        self._timeline = None
+        self._count =0
+
 
     #-------------------------------------------
 
     def get_mixData(self):
-        # next(track) returns an array of samples, equivalent to track.get_next method
+        nb_frames = self._block_size
+        timeline = self._timeline
+        time_len = timeline.len
+        time_pos = timeline.pos
+        if time_pos >= time_len:
+            # print(f"pos:  {time_pos}, len: {time_len}, count: {self._count}")
+            # return np.zeros((nb_frames,), dtype='int16')
+            timeline.reset()
+            # self._count +=1
+        
+        """
+        if tim_pos < tim_len:
+            finishing =0
+            delta = tim_len - tim_pos
+            if delta < nb_frames:
+                nb_frames = delta
+                finishing =1
+        else: # tim_pos >= tim_len
+            return
+        """
+
+        timeline.set_pos(time_pos + nb_frames)
+# next(track) returns an array of samples, equivalent to track.get_next method
         samp_lst = [next(track) for track in self._track_lst if track.is_active()]
         samp = np.sum(samp_lst, axis=0) / len(samp_lst)
         # must multiply by 32767 before convert to int16
@@ -318,16 +472,16 @@ class Mixer(BaseSynth):
 
     #-------------------------------------------
     
-    def set_mixData(self, track_lst):
-        self._track_lst = track_lst
-
-    #-------------------------------------------
-    
     def get_mixTracks(self):
         return self._track_lst
 
     #-------------------------------------------
 
+    def set_mixTracks(self, track_lst):
+        self._track_lst = track_lst
+
+    #-------------------------------------------
+    
 #========================================
 
 class SimpleSynth(object):
@@ -339,6 +493,9 @@ class SimpleSynth(object):
         self.amp_scale = 0.3
         self.max_amp = 0.8
         self._mix = Mixer()
+        self._timeline = TimeLine()
+        self._mix._timeline = self._timeline
+
         self._running = True
 
     #-------------------------------------------
@@ -390,7 +547,7 @@ class SimpleSynth(object):
         start = 96 * self._blocksize
         _len = 192 * self._blocksize
         osc4.init_params(start=start, _len=_len, pos=0, looping=1)
-        self._mix.set_mixData(
+        self._mix.set_mixTracks(
                 [met, osc1, osc2, osc3, osc4]
                 )
 
@@ -427,13 +584,14 @@ class SimpleSynth(object):
         osc4  = PartOsc(freq, self._rate, self._blocksize)
         start = 96 * self._blocksize
         _len = 192 * self._blocksize
+        self._timeline.len = _len
         osc4.init_params(start=start, _len=_len, pos=0, looping=1)
         freq = 723 # G5
         osc5  = PartOsc(freq, self._rate, self._blocksize)
         start =0
         _len =  3 * self._blocksize
         osc5.init_params(start=start, _len=_len, pos=0, looping=0)
-        self._mix.set_mixData(
+        self._mix.set_mixTracks(
                 [met, osc1, osc2, osc3, 
                     osc4, osc5]
                 )
@@ -463,6 +621,7 @@ class SimpleSynth(object):
 
     def restart(self):
         [track.reset() for track in self._mix.get_mixTracks()]
+        self._timeline.reset()
 
     #-------------------------------------------
            
