@@ -138,7 +138,17 @@ class Metronome(BaseSynth):
         self.set_bpm(bpm)
 
     #-------------------------------------------
-  
+
+    def reset(self):
+        """ reset metronome object """
+        self._curpos =0
+        self._active =1
+        self._osc_index =0
+        self._loop_index =0
+
+    #-------------------------------------------
+
+
     def set_bpm(self, bpm):
         if bpm <1and bpm > 8000: return
         # bpm =98
