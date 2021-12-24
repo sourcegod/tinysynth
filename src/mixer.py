@@ -263,6 +263,8 @@ class PartOsc(BaseSynth):
         self.max_amp = 0.8
         self._osc = gen_sine_osc(freq=self._freq, amp=1, rate=self._rate)
         self._start =0
+        self._dur =0
+        self._stop =0
         self._len =0
         self._curpos =0
         self._looping =0
@@ -283,8 +285,8 @@ class PartOsc(BaseSynth):
                     self._active =0
                     break
             if self._curpos < self._start: val=0
+            elif self._stop >0 and self._curpos >= self._stop: val =0
             else: 
-                # if self._curpos == self._start: print("curpos: ", self._curpos)
                 val = next(osc_func)
             
             lst.append(val)
@@ -296,12 +298,12 @@ class PartOsc(BaseSynth):
 
     #-------------------------------------------
 
-    def init_params(self, start=0, _len=0, pos=0, looping=0):
+    def init_params(self, start=0, stop=0, _len=0, pos=0, looping=0):
         self._start = start
+        self._stop = stop
         self._len = _len
         self._curpos = pos
         self._looping = looping
-        self._active =1
         self._active =1
 
     #-------------------------------------------
@@ -312,8 +314,7 @@ class PartOsc(BaseSynth):
     #-------------------------------------------
 
     def __next__(self):
-        samp = self._get_frames(self._osc, self._block_size)
-        return samp
+        return self._get_frames(self._osc, self._block_size)
 
     #-------------------------------------------
 
@@ -444,6 +445,7 @@ class Mixer(BaseSynth):
         self._block_size = block_size
         self._track_lst = []
         self._timeline = None
+        self._seq = None
         self._count =0
 
 
@@ -457,8 +459,11 @@ class Mixer(BaseSynth):
         if time_pos >= time_len:
             # print(f"pos:  {time_pos}, len: {time_len}, count: {self._count}")
             # return np.zeros((nb_frames,), dtype='int16')
-            timeline.reset()
-            # self._count +=1
+            # timeline.reset()
+            self._seq.reset_all()
+            pass
+            self._count +=1
+            # print(f"pos: {timeline.pos}, count: {self._count}")
         
         """
         if tim_pos < tim_len:
@@ -470,8 +475,8 @@ class Mixer(BaseSynth):
         else: # tim_pos >= tim_len
             return
         """
-
-        timeline.set_pos(time_pos + nb_frames)
+# dont forget to the real object to update timeline
+        timeline.set_pos(timeline.pos + nb_frames)
 # next(track) returns an array of samples, equivalent to track.get_next method
         samp_lst = [next(track) for track in self._track_lst if track.is_active()]
         samp = np.sum(samp_lst, axis=0) / len(samp_lst)
@@ -491,7 +496,12 @@ class Mixer(BaseSynth):
         self._track_lst = track_lst
 
     #-------------------------------------------
-    
+
+    def add_mixTrack(self, track):
+        self._track_lst.append(track)
+
+    #-------------------------------------------
+     
 #========================================
 
 class SimpleSynth(object):
@@ -505,6 +515,7 @@ class SimpleSynth(object):
         self._mix = Mixer()
         self._timeline = TimeLine()
         self._mix._timeline = self._timeline
+        self._mix._seq = self
 
         self._running = True
 
@@ -596,18 +607,12 @@ class SimpleSynth(object):
         _len = 192 * self._blocksize
         self._timeline.len = _len
         osc4.init_params(start=start, _len=_len, pos=0, looping=1)
-        freq = 723 # G5
-        osc5  = PartOsc(freq, self._rate, self._blocksize)
-        start =0
-        _len =  3 * self._blocksize
-        osc5.init_params(start=start, _len=_len, pos=0, looping=0)
-        self._mix.set_mixTracks(
-                [met, osc1, osc2, osc3, 
-                    osc4, osc5]
-                )
+        self._track_lst = [met, osc1, osc2, osc3, osc4]
+        self._mix.set_mixTracks(self._track_lst)
         self._running = False
 
     #-------------------------------------------
+
  
     def play_thread(self):
         self._total_frames =0
@@ -629,12 +634,56 @@ class SimpleSynth(object):
 
     #-------------------------------------------
 
-    def restart(self):
+    def reset_all(self):
         [track.reset() for track in self._mix.get_mixTracks()]
         self._timeline.reset()
 
     #-------------------------------------------
-           
+ 
+    def get_pos(self):
+        pos = self._timeline.pos
+        msg = f"{pos} frames"
+        self.print_info(msg)
+    #-------------------------------------------
+
+    def add_track(self):
+        pos = self._timeline.pos
+        print(f"voici: {pos}")
+        freq = 723 # G5
+        osc  = PartOsc(freq, self._rate, self._blocksize)
+        # start = pos
+        # delay compensation
+        start = pos - 8 * self._blocksize + 480 # empiric value
+        stop = start + 3 * self._blocksize
+        _len =   192 * self._blocksize
+        osc.init_params(start=start, stop=stop, _len=_len, pos=0, looping=1)
+        osc.set_active(0)
+        self._mix.add_mixTrack(osc)
+        after_pos = self._timeline.pos
+
+        msg = f"Add track at pos: {pos}, after_pos: {after_pos}, start: {start}   frames"
+        self.print_info(msg)
+
+    #-------------------------------------------
+
+    def init_tracks(self):
+        if len(self._track_lst) >5: 
+            self._track_lst = self._track_lst[:5]
+            self._mix.set_mixTracks(self._track_lst)
+            self.reset_all()
+
+        msg = f"Init tracks frames"
+        self.print_info(msg)
+
+    #-------------------------------------------
+
+
+    def print_info(self, msg):
+        print(msg)
+
+    #-------------------------------------------
+
+
 #========================================
 
 def main():
@@ -659,7 +708,7 @@ def main():
                 thr = threading.Thread(target=synth.play_thread, args=())
                 thr.start()
         elif key == "P":
-            synth.restart()
+            synth.reset_all()
         elif key == "s":
             if synth._running:
                 thr.do_run = False
@@ -669,6 +718,13 @@ def main():
             thr.do_run = False
             # synth.stop()
             break
+        elif key == "g":
+            synth.get_pos()
+        elif key == "a":
+            synth.add_track()
+        elif key == "d":
+            synth.init_tracks()
+
 
 #-------------------------------------------
 
