@@ -12,6 +12,7 @@ import itertools
 import numpy as np
 import midutils as mid
 import threading
+import time
 
 #-----------------------------------------
 
@@ -459,9 +460,7 @@ class Mixer(BaseSynth):
         if time_pos >= time_len:
             # print(f"pos:  {time_pos}, len: {time_len}, count: {self._count}")
             # return np.zeros((nb_frames,), dtype='int16')
-            # timeline.reset()
             self._seq.reset_all()
-            pass
             self._count +=1
             # print(f"pos: {timeline.pos}, count: {self._count}")
         
@@ -518,6 +517,8 @@ class SimpleSynth(object):
         self._mix._seq = self
 
         self._running = True
+        self._start_time =0
+
 
     #-------------------------------------------
     
@@ -554,7 +555,6 @@ class SimpleSynth(object):
     #-------------------------------------------
 
     def play(self, bpm):
-        self._total_frames =0
         self._init_stream()
         met = Metronome(self._rate, self._blocksize, bpm)
         freq = 220
@@ -572,15 +572,20 @@ class SimpleSynth(object):
                 [met, osc1, osc2, osc3, osc4]
                 )
 
-        t = threading.currentThread()
         try:
-            # while self._running:
-            while getattr(t, "do_run", True):
+            total_frames =0
+            self.init_time()
+            while self._running:
                 samp = self._mix.get_mixData()
-                self.write_data(samp)
-                self._total_frames += samp.size
+                self.stream.write(samp)
+                total_frames += samp.size
+                if total_frames >= 192000:
+                    timing = self.get_timing()
+                    print(f"Elapsed time: {timing:0.3f} in {total_frames} frames")
+                    time.sleep(5)
+                    total_frames =0
+                    self.init_time()
                 # print("total frames: ",  self._total_frames)
-                # self.stream.write(samp)
         except KeyboardInterrupt as err:
             self.stop()
     #-------------------------------------------
@@ -613,17 +618,35 @@ class SimpleSynth(object):
 
     #-------------------------------------------
 
- 
+    def init_time(self):
+        self._start_time = time.time()
+
+    #-------------------------------------------
+
+    def get_timing(self):
+        return time.time() - self._start_time
+
+    #-------------------------------------------
+
+
     def play_thread(self):
-        self._total_frames =0
         t = threading.currentThread()
         self._running = True
         try:
+            total_frames =0
+            self.init_time()
             while getattr(t, "do_run", True):
                 samp = self._mix.get_mixData()
-                self.write_data(samp)
-                self._total_frames += samp.size
-                # print("total frames: ",  self._total_frames)
+                # self.write_data(samp)
+                self.stream.write(samp)
+                total_frames += samp.size
+                if total_frames >= 192000:
+                    elapsed_time = self.get_timing()
+                    print(f"Elapsed time: {elapsed_time:0.3f}, in frames: {total_frames}")
+                    time.sleep(4)
+                    total_frames =0
+                    self.init_time()
+
         except KeyboardInterrupt as err:
             self.stop()
 
@@ -638,17 +661,20 @@ class SimpleSynth(object):
         [track.reset() for track in self._mix.get_mixTracks()]
         self._timeline.reset()
 
+
     #-------------------------------------------
  
     def get_pos(self):
+        """ returns position from Simple Synth object """
         pos = self._timeline.pos
-        msg = f"{pos} frames"
+        timing = self.get_timing()
+        msg = f"{pos} frames, {timing:0.3f} secs"
         self.print_info(msg)
     #-------------------------------------------
 
     def add_track(self):
+        # self.init_time()
         pos = self._timeline.pos
-        print(f"voici: {pos}")
         freq = 723 # G5
         osc  = PartOsc(freq, self._rate, self._blocksize)
         # start = pos
@@ -660,6 +686,7 @@ class SimpleSynth(object):
         osc.set_active(0)
         self._mix.add_mixTrack(osc)
         after_pos = self._timeline.pos
+        # print(f"timed: {self.get_timing():0.3f}")
 
         msg = f"Add track at pos: {pos}, after_pos: {after_pos}, start: {start}   frames"
         self.print_info(msg)
@@ -713,6 +740,15 @@ def main():
             if synth._running:
                 thr.do_run = False
                 synth.stop_thread()
+        elif key == "m":
+            if not synth._running:
+                synth._running = True
+                synth.play(120)
+        elif key == "S":
+            if synth._running:
+                synth._running = False
+                synth.stop()
+
 
         elif key == "q":
             thr.do_run = False
@@ -721,6 +757,7 @@ def main():
         elif key == "g":
             synth.get_pos()
         elif key == "a":
+            synth.init_time()
             synth.add_track()
         elif key == "d":
             synth.init_tracks()
