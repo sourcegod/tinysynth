@@ -520,6 +520,17 @@ class SimpleSynth(object):
 
     #-------------------------------------------
     
+    def get_devInfo(self):
+        dev = sd.default.device
+        info = sd.query_devices(dev)
+        self.print_info(f"Device info:\n {info}")
+        info = sd.query_hostapis()
+        self.print_info(f"Device info:\n {info}")
+
+
+
+    #-------------------------------------------
+
     def _init_stream(self):
         # Initialize the Stream object
 
@@ -728,16 +739,8 @@ def main():
         elif key == "s":
             if synth._running:
                 synth.stop()
-        elif key == "m":
-            if not synth._running:
-                synth._running = True
-                synth.play(120)
-        elif key == "S":
-            if synth._running:
-                synth._running = False
-                synth.stop()
-
-
+        elif key == "i":
+            synth.get_devInfo()
         elif key == "q":
             synth.stop()
             print("Bye!!!")
