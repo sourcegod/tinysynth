@@ -482,7 +482,8 @@ class Mixer(BaseSynth):
         # must multiply by 32767 before convert to int16
         samp = np.int16(samp * self._max_int16) # 32767
         # samp = np.int16(samp.clip(-self.max_amp, self.max_amp) * 32767)
-        return samp
+        # Sound Device need array shape(-1, channels)
+        return samp.reshape(-1, 1)
 
     #-------------------------------------------
     
@@ -510,6 +511,7 @@ class SimpleSynth(object):
         self._rate = rate
         self._blocksize = blocksize
         self.amp_scale = 0.3
+        self._stream = None
         self.max_amp = 0.8
         self._mix = Mixer()
         self._timeline = TimeLine()
@@ -525,16 +527,42 @@ class SimpleSynth(object):
     def _init_stream(self):
         # Initialize the Stream object
 
-        self.stream = sd.OutputStream(
+        self._stream = sd.OutputStream(
             samplerate = self._rate,
             channels = self._channels,
             dtype = 'int16',
             blocksize = self._blocksize,
             )
-        self.stream.start()
+        self._stream.start()
 
     #-------------------------------------------
-   
+
+    def _init_streamCback(self):
+        """
+        Initialize the Stream callback object
+        """
+
+
+        stream = sd.OutputStream(
+            samplerate = self._rate,
+            channels = self._channels,
+            dtype = 'int16',
+            blocksize = self._blocksize,
+            callback=self._func_callback
+            )
+
+        return stream
+
+    #-------------------------------------------
+    
+    def _func_callback(self, outdata, frame_count, time, status):
+        """ callback function for output stream """
+        # print(f"frame_count: {frame_count}")
+        samp = self._mix.get_mixData()
+        outdata[:] = samp
+
+    #-------------------------------------------
+
     def _get_samples(self, notes_dict):
         # Return samples in int16 format
         samples = []
@@ -550,55 +578,31 @@ class SimpleSynth(object):
     #-------------------------------------------
 
     def write_data(self, samp):
-        self.stream.write(samp)
+        self._stream.write(samp)
 
     #-------------------------------------------
 
-    def play(self, bpm):
-        self._init_stream()
-        met = Metronome(self._rate, self._blocksize, bpm)
-        freq = 220
-        osc1  = SimpleOsc(freq, self._rate, self._blocksize)
-        freq = 365
-        osc2  = SimpleOsc(freq, self._rate, self._blocksize)
-        freq = 880
-        osc3  = SimpleOsc(freq, self._rate, self._blocksize)
-        freq = 1760
-        osc4  = PartOsc(freq, self._rate, self._blocksize)
-        start = 96 * self._blocksize
-        _len = 192 * self._blocksize
-        osc4.init_params(start=start, _len=_len, pos=0, looping=1)
-        self._mix.set_mixTracks(
-                [met, osc1, osc2, osc3, osc4]
-                )
-
+    def play(self):
+        self._running = True
+        self._stream = self._init_streamCback()
         try:
-            total_frames =0
-            self.init_time()
-            while self._running:
-                samp = self._mix.get_mixData()
-                self.stream.write(samp)
-                total_frames += samp.size
-                if total_frames >= 192000:
-                    timing = self.get_timing()
-                    print(f"Elapsed time: {timing:0.3f} in {total_frames} frames")
-                    time.sleep(5)
-                    total_frames =0
-                    self.init_time()
-                # print("total frames: ",  self._total_frames)
+            self._stream.start()
         except KeyboardInterrupt as err:
             self.stop()
+    
     #-------------------------------------------
     
 
     def stop(self):
         self._running = False
-        self.stream.close()
+        if self._stream:
+            self._stream.stop()
+            self._stream.close()
 
     #-------------------------------------------
 
     def init_synth(self, bpm):
-        self._init_stream()
+        # self._init_stream()
         met = Metronome(self._rate, self._blocksize, bpm)
         freq = 220
         osc1  = SimpleOsc(freq, self._rate, self._blocksize)
@@ -638,7 +642,7 @@ class SimpleSynth(object):
             while getattr(t, "do_run", True):
                 samp = self._mix.get_mixData()
                 # self.write_data(samp)
-                self.stream.write(samp)
+                self._stream.write(samp)
                 total_frames += samp.size
                 if total_frames >= 192000:
                     elapsed_time = self.get_timing()
@@ -716,7 +720,6 @@ class SimpleSynth(object):
 def main():
     synth = SimpleSynth()
     bpm = 120
-    # synth.play(bpm)
     synth.init_synth(bpm)
 
     valStr = ""
@@ -732,14 +735,12 @@ def main():
             key = valStr
         if key == "p":
             if not synth._running:
-                thr = threading.Thread(target=synth.play_thread, args=())
-                thr.start()
+                synth.play()
         elif key == "P":
             synth.reset_all()
         elif key == "s":
             if synth._running:
-                thr.do_run = False
-                synth.stop_thread()
+                synth.stop()
         elif key == "m":
             if not synth._running:
                 synth._running = True
@@ -751,13 +752,12 @@ def main():
 
 
         elif key == "q":
-            thr.do_run = False
-            # synth.stop()
+            synth.stop()
+            print("Bye!!!")
             break
         elif key == "g":
             synth.get_pos()
         elif key == "a":
-            synth.init_time()
             synth.add_track()
         elif key == "d":
             synth.init_tracks()
