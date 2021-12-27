@@ -89,11 +89,10 @@ class BaseSynth(object):
     #-------------------------------------------
  
     def _get_frames(self, osc_func, frame_count):
-        # Return samples in int16 format
-        samp = [next(osc_func) for _ in range(frame_count)]
-        # samp = np.array(samp) 
-        # samp = np.int16(samp.clip(-self.max_amp, self.max_amp) * 32767)
-        return samp # samples.reshape(frame_count, -1)
+        if osc_func is None:
+            # returns blank sample
+            return [0] * frame_count
+        return [next(osc_func) for _ in range(frame_count)]
 
     #-------------------------------------------
     
@@ -129,13 +128,14 @@ class Metronome(BaseSynth):
         self._osc_index =0
         self._loop_index =0
         self._nb_loops =0 
-        self._beat_len = self._block_size * 2 # len of beat tone
+        self._beat_len = self._block_size * 4 # len of beat tone
         osc1 = gen_sine_osc(freq=880, amp=1, rate=self._rate)
         osc2 = gen_sine_osc(freq=440, amp=1, rate=self._rate)
         self._blank = self._get_zeros(self._block_size)
         self._rest_frames =0
         self._resting =0
-        self._osc_lst = [osc1, None, osc2, None, osc2, None, osc2, None]
+        # self._osc_lst = [osc1, None, osc2, None, osc2, None, osc2, None]
+        self._osc_lst = [osc1, osc2, osc2, osc2]
         self.set_bpm(bpm)
 
     #-------------------------------------------
@@ -154,7 +154,7 @@ class Metronome(BaseSynth):
         if bpm <1and bpm > 8000: return
         # bpm =98
         self._tempo = float(self._nb_ticks  / bpm)
-        nb_samples = int((self._tempo * self._rate / 1000) / 2) # for 8 sounds
+        nb_samples = int((self._tempo * self._rate / 1000) ) # for 8 sounds
         (self._nb_loops, rest_frames) = divmod(nb_samples, self._block_size)
         print(f"nb_loops: {self._nb_loops}, rest_frames: {rest_frames}")
         self._rest_frames = self._get_zeros(rest_frames)
@@ -182,13 +182,12 @@ class Metronome(BaseSynth):
         """
 
         try:
-            if (self._osc_index % 2 == 0) and \
-                    self._loop_index * self._block_size >= self._beat_len:
+            # if (self._osc_index % 2 == 0) and \
+            if self._loop_index * self._block_size >= self._beat_len:
+                # blank sample
                 osc = None
-                # osc = self._osc_lst[self._osc_index]
             else:
                 osc = self._osc_lst[self._osc_index]
-                # osc = None
             
             if self._loop_index +1 < self._nb_loops:
                 self._loop_index +=1
@@ -200,11 +199,7 @@ class Metronome(BaseSynth):
                     self._osc_index +=1
                 else:
                     self._osc_index =0
-            
-            if osc is None: 
-                samp = self._blank
-            else:
-                samp = self._get_frames(osc, self._block_size)
+            samp = self._get_frames(osc, self._block_size)
 
             return samp
     
@@ -278,6 +273,7 @@ class PartOsc(BaseSynth):
         from PartOsc object
         """
         lst = []
+        # print(f"frame_count: {frame_count}, _len: {self._len}")
         for _ in range(frame_count):
             if self._curpos >= self._len:
                 if self._looping:
@@ -453,7 +449,7 @@ class Mixer(BaseSynth):
     #-------------------------------------------
 
     def get_mixData(self):
-        nb_frames = self._block_size
+        nb_frames = 480 # self._block_size
         timeline = self._timeline
         time_len = timeline.len
         time_pos = timeline.pos
@@ -558,19 +554,11 @@ class SimpleSynth(object):
     def _func_callback(self, outdata, frame_count, time_t, status):
         """ callback function for output stream """
         # print(f"frame_count: {frame_count}")
+        # print(f"status: {status}, {time_t.outputBufferDacTime}")
         samp = self._mix.get_mixData()
         outdata[:] = samp
+        # self.get_timeFrames(samp)
         
-        """
-        self._total_frames += samp.size
-        if self._total_frames >= 192000:
-            elapsed_time = self.get_timing()
-            print(f"Elapsed time: {elapsed_time:0.3f}, in frames: {self._total_frames}")
-            time.sleep(4)
-            self._total_frames =0
-            self.init_time()
-        """
-
 
     #-------------------------------------------
 
@@ -597,6 +585,7 @@ class SimpleSynth(object):
         self._running = True
         self._stream = self._init_streamCback()
         self._total_frames =0
+        self._count =0
         self.init_time()
         try:
             self._stream.start()
@@ -615,7 +604,7 @@ class SimpleSynth(object):
     #-------------------------------------------
 
     def init_synth(self, bpm):
-        # self._init_stream()
+        self._blocksize = 480
         met = Metronome(self._rate, self._blocksize, bpm)
         freq = 220
         osc1  = SimpleOsc(freq, self._rate, self._blocksize)
@@ -623,10 +612,10 @@ class SimpleSynth(object):
         osc2  = SimpleOsc(freq, self._rate, self._blocksize)
         freq = 880
         osc3  = SimpleOsc(freq, self._rate, self._blocksize)
-        freq = 1760
+        freq =  1760
         osc4  = PartOsc(freq, self._rate, self._blocksize)
-        start = 96 * self._blocksize
-        _len = 192 * self._blocksize
+        start = 200 * self._blocksize
+        _len =  start *2 # 192000
         self._timeline.len = _len
         osc4.init_params(start=start, _len=_len, pos=0, looping=1)
         self._track_lst = [met, osc1, osc2, osc3, osc4]
@@ -642,6 +631,20 @@ class SimpleSynth(object):
 
     def get_timing(self):
         return time.time() - self._start_time
+
+    #-------------------------------------------
+
+    def get_timeFrames(self, samp):
+        # """
+        self._total_frames += samp.size
+        self._count +=1
+        if self._total_frames >= 192000:
+            elapsed_time = self.get_timing()
+            print(f"Elapsed time: {elapsed_time:0.3f}, in frames: {self._total_frames}, in {self._count} count")
+            time.sleep(4)
+            self._total_frames =0
+            self.init_time()
+        # """
 
     #-------------------------------------------
 
