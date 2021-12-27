@@ -555,11 +555,22 @@ class SimpleSynth(object):
 
     #-------------------------------------------
     
-    def _func_callback(self, outdata, frame_count, time, status):
+    def _func_callback(self, outdata, frame_count, time_t, status):
         """ callback function for output stream """
         # print(f"frame_count: {frame_count}")
         samp = self._mix.get_mixData()
         outdata[:] = samp
+        
+        """
+        self._total_frames += samp.size
+        if self._total_frames >= 192000:
+            elapsed_time = self.get_timing()
+            print(f"Elapsed time: {elapsed_time:0.3f}, in frames: {self._total_frames}")
+            time.sleep(4)
+            self._total_frames =0
+            self.init_time()
+        """
+
 
     #-------------------------------------------
 
@@ -585,6 +596,8 @@ class SimpleSynth(object):
     def play(self):
         self._running = True
         self._stream = self._init_streamCback()
+        self._total_frames =0
+        self.init_time()
         try:
             self._stream.start()
         except KeyboardInterrupt as err:
@@ -629,35 +642,6 @@ class SimpleSynth(object):
 
     def get_timing(self):
         return time.time() - self._start_time
-
-    #-------------------------------------------
-
-
-    def play_thread(self):
-        t = threading.currentThread()
-        self._running = True
-        try:
-            total_frames =0
-            self.init_time()
-            while getattr(t, "do_run", True):
-                samp = self._mix.get_mixData()
-                # self.write_data(samp)
-                self._stream.write(samp)
-                total_frames += samp.size
-                if total_frames >= 192000:
-                    elapsed_time = self.get_timing()
-                    print(f"Elapsed time: {elapsed_time:0.3f}, in frames: {total_frames}")
-                    time.sleep(4)
-                    total_frames =0
-                    self.init_time()
-
-        except KeyboardInterrupt as err:
-            self.stop()
-
-    #-------------------------------------------
-
-    def stop_thread(self):
-        self._running = False
 
     #-------------------------------------------
 
@@ -768,4 +752,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-    #-------------------------------------------
+
+#-------------------------------------------
